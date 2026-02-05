@@ -53,6 +53,8 @@ pyinstaller \
   --distpath "$DIST_DIR" \
   --workpath "$BUILD_DIR/pyinstaller" \
   --add-data "assets:assets" \
+  --hidden-import "PIL.ImageTk" \
+  --hidden-import "PIL._tkinter_finder" \
   aliux.py
 
 # Construction AppDir
@@ -113,3 +115,15 @@ ARCH="$ARCH" "$APPIMAGETOOL" "$APPDIR" "$OUT"
 echo
 echo "OK -> $OUT"
 echo "OK -> $OUT.sha256"
+
+# Archive tar.gz de l’AppImage + SHA256
+TAR="$RELEASES_DIR/${APP_NAME}-${APP_VERSION}-linux-${ARCH}.tar.gz"
+
+(
+  cd "$RELEASES_DIR"
+  tar -czf "$(basename "$TAR")" "$(basename "$OUT")"
+  sha256sum "$(basename "$TAR")" > "$(basename "$TAR").sha256"
+)
+
+echo "OK -> $TAR"
+echo "OK -> $TAR.sha256"

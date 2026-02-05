@@ -5,6 +5,7 @@ __pycache__/
 venv/
 dist/
 build/
+releases/
 *.spec
 *.odt
 .DS_Store
