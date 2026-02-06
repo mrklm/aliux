@@ -1,6 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# ------------------------------------------------------------
+# Build Linux AppImage pour Aliux
+# Sorties dans ./releases/
+#
+# Pré-requis:
+#   - python3.12 + python3.12-venv
+#   - curl
+#   - (optionnel) fuse2/fuse3 pour exécuter appimagetool.AppImage
+# ------------------------------------------------------------
+
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT_DIR"
 
@@ -21,7 +31,7 @@ esac
 # ---- Version depuis aliux.py --------------------------------
 # Attendu: APP_VERSION = "x.y.z"
 APP_VERSION="$(
-  python3 - <<'PY'
+  python3.12 - <<'PY'
 import re
 from pathlib import Path
 txt = Path("aliux.py").read_text(encoding="utf-8", errors="replace")
@@ -37,17 +47,29 @@ APPDIR="$BUILD_DIR/${APP_NAME}.AppDir"
 
 mkdir -p "$BUILD_DIR" "$RELEASES_DIR"
 
-# ---- Venv de build ------------------------------------------
-if [[ ! -d ".venv-build" ]]; then
-  python3 -m venv .venv-build
-fi
+# ---- Venv de build (recréé à chaque build) -------------------
+rm -rf .venv-build
+python3.12 -m venv .venv-build
 
 # shellcheck disable=SC1091
 source .venv-build/bin/activate
 
-python -m pip install -U pip wheel setuptools
+# ---- Garde-fou: vérifier que pip vient du venv ---------------
+python -m pip install -U pip setuptools wheel
+
+PIP_PATH="$(python -c 'import pip, os; print(os.path.abspath(pip.__file__))')"
+case "$PIP_PATH" in
+  *"/.venv-build/"*) : ;;
+  *)
+    echo "ERREUR: pip ne vient pas du venv (.venv-build). Chemin: $PIP_PATH"
+    exit 1
+    ;;
+esac
+
+# ---- Dépendances build ---------------------------------------
 python -m pip install -U pyinstaller
 
+# Runtime deps
 if [[ -f "requirements.txt" ]]; then
   python -m pip install -r requirements.txt
 fi
@@ -57,6 +79,7 @@ rm -rf "$DIST_DIR" "$BUILD_DIR/pyinstaller" "$APPDIR"
 mkdir -p "$BUILD_DIR/pyinstaller"
 
 # ---- Build PyInstaller (onedir) ------------------------------
+# Remarque: --add-data sous Linux utilise ":" (et non ";").
 pyinstaller \
   --noconfirm \
   --clean \
@@ -104,10 +127,10 @@ DESKTOP
 # ---- Icône ---------------------------------------------------
 # On utilise assets/aliuxico.png
 if [[ -f "assets/aliuxico.png" ]]; then
-  # icône à la racine (classique AppImage)
+  # Icône à la racine (classique AppImage)
   cp -a "assets/aliuxico.png" "$APPDIR/aliux.png"
 
-  # icône aussi dans hicolor (meilleure compatibilité menus)
+  # Icône aussi dans hicolor (meilleure compatibilité menus)
   mkdir -p "$APPDIR/usr/share/icons/hicolor/256x256/apps"
   cp -a "$APPDIR/aliux.png" "$APPDIR/usr/share/icons/hicolor/256x256/apps/aliux.png"
 else
@@ -116,13 +139,14 @@ else
 fi
 
 # ---- Récupération appimagetool -------------------------------
+if ! command -v curl >/dev/null 2>&1; then
+  echo "ERREUR: curl est requis (ex: sudo apt install -y curl)"
+  exit 1
+fi
+
 APPIMAGETOOL="$BUILD_DIR/appimagetool-${ARCH}.AppImage"
 if [[ ! -f "$APPIMAGETOOL" ]]; then
-  if ! command -v curl >/dev/null 2>&1; then
-    echo "ERREUR: curl est requis (ex: sudo apt install -y curl)"
-    exit 1
-  fi
-  echo "Téléchargement appimagetool..."
+  echo "Téléchargement appimagetool (${ARCH})..."
   curl -L -o "$APPIMAGETOOL" \
     "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-${ARCH}.AppImage"
   chmod +x "$APPIMAGETOOL"
@@ -132,7 +156,22 @@ fi
 OUT="$RELEASES_DIR/${APP_NAME}-${APP_VERSION}-linux-${ARCH}.AppImage"
 rm -f "$OUT"
 
-ARCH="$ARCH" "$APPIMAGETOOL" "$APPDIR" "$OUT"
+# Tentative 1: exécuter appimagetool.AppImage directement.
+# Si FUSE manque, fallback par extraction.
+if ARCH="$ARCH" "$APPIMAGETOOL" "$APPDIR" "$OUT"; then
+  :
+else
+  echo "appimagetool.AppImage a échoué (souvent FUSE manquant). Fallback: extraction..."
+  EXTRACT_DIR="$BUILD_DIR/appimagetool-extract"
+  rm -rf "$EXTRACT_DIR"
+  mkdir -p "$EXTRACT_DIR"
+
+  # Extraction de l'AppImage tool
+  (cd "$EXTRACT_DIR" && "$APPIMAGETOOL" --appimage-extract >/dev/null)
+
+  # Exécution du tool extrait
+  ARCH="$ARCH" "$EXTRACT_DIR/squashfs-root/AppRun" "$APPDIR" "$OUT"
+fi
 
 # ---- SHA256 ---------------------------------------------------
 (
