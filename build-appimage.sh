@@ -5,9 +5,21 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT_DIR"
 
 APP_NAME="Aliux"
-ARCH="x86_64"
 
-# Lecture version depuis aliux.py : APP_VERSION = "x.y.z"
+# ---- Architecture (auto) ------------------------------------
+ARCH="$(uname -m)"
+case "$ARCH" in
+  x86_64|aarch64) : ;;
+  amd64) ARCH="x86_64" ;;
+  arm64) ARCH="aarch64" ;;
+  *)
+    echo "ERREUR: architecture non supportée: $ARCH"
+    exit 1
+    ;;
+esac
+
+# ---- Version depuis aliux.py --------------------------------
+# Attendu: APP_VERSION = "x.y.z"
 APP_VERSION="$(
   python3 - <<'PY'
 import re
@@ -25,7 +37,7 @@ APPDIR="$BUILD_DIR/${APP_NAME}.AppDir"
 
 mkdir -p "$BUILD_DIR" "$RELEASES_DIR"
 
-# Venv de build
+# ---- Venv de build ------------------------------------------
 if [[ ! -d ".venv-build" ]]; then
   python3 -m venv .venv-build
 fi
@@ -40,11 +52,11 @@ if [[ -f "requirements.txt" ]]; then
   python -m pip install -r requirements.txt
 fi
 
-# Nettoyage sorties précédentes
+# ---- Nettoyage sorties précédentes --------------------------
 rm -rf "$DIST_DIR" "$BUILD_DIR/pyinstaller" "$APPDIR"
 mkdir -p "$BUILD_DIR/pyinstaller"
 
-# Build PyInstaller (onedir)
+# ---- Build PyInstaller (onedir) ------------------------------
 pyinstaller \
   --noconfirm \
   --clean \
@@ -57,15 +69,21 @@ pyinstaller \
   --hidden-import "PIL._tkinter_finder" \
   aliux.py
 
-# Construction AppDir
+# ---- Construction AppDir ------------------------------------
 mkdir -p "$APPDIR/usr/bin"
 cp -a "$DIST_DIR/$APP_NAME" "$APPDIR/usr/bin/$APP_NAME"
 
-# AppRun
+# AppRun (fallback sans readlink -f obligatoire)
 cat > "$APPDIR/AppRun" <<'SH'
 #!/bin/sh
 set -eu
-HERE="$(dirname "$(readlink -f "$0")")"
+
+if command -v realpath >/dev/null 2>&1; then
+  HERE="$(dirname "$(realpath "$0")")"
+else
+  HERE="$(cd "$(dirname "$0")" && pwd)"
+fi
+
 exec "$HERE/usr/bin/Aliux/Aliux" "$@"
 SH
 chmod +x "$APPDIR/AppRun"
@@ -76,49 +94,58 @@ cat > "$APPDIR/aliux.desktop" <<DESKTOP
 Type=Application
 Name=Aliux
 Comment=Installateur AppImage local
-Exec=Aliux
+Exec=Aliux %U
 Icon=aliux
 Terminal=false
 Categories=Utility;
 StartupNotify=true
 DESKTOP
 
-# Icône AppImage (on utilise assets/aliuxico.png)
+# ---- Icône ---------------------------------------------------
+# On utilise assets/aliuxico.png
 if [[ -f "assets/aliuxico.png" ]]; then
+  # icône à la racine (classique AppImage)
   cp -a "assets/aliuxico.png" "$APPDIR/aliux.png"
+
+  # icône aussi dans hicolor (meilleure compatibilité menus)
+  mkdir -p "$APPDIR/usr/share/icons/hicolor/256x256/apps"
+  cp -a "$APPDIR/aliux.png" "$APPDIR/usr/share/icons/hicolor/256x256/apps/aliux.png"
 else
   echo "ERREUR: assets/aliuxico.png introuvable"
   exit 1
 fi
 
-# Récupération appimagetool (nécessite curl)
+# ---- Récupération appimagetool -------------------------------
 APPIMAGETOOL="$BUILD_DIR/appimagetool-${ARCH}.AppImage"
 if [[ ! -f "$APPIMAGETOOL" ]]; then
   if ! command -v curl >/dev/null 2>&1; then
-    echo "ERREUR: curl est requis. Installer avec: sudo apt install -y curl"
+    echo "ERREUR: curl est requis (ex: sudo apt install -y curl)"
     exit 1
   fi
   echo "Téléchargement appimagetool..."
-  curl -L -o "$APPIMAGETOOL" "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-${ARCH}.AppImage"
+  curl -L -o "$APPIMAGETOOL" \
+    "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-${ARCH}.AppImage"
   chmod +x "$APPIMAGETOOL"
 fi
 
-# Génération AppImage
+# ---- Génération AppImage -------------------------------------
 OUT="$RELEASES_DIR/${APP_NAME}-${APP_VERSION}-linux-${ARCH}.AppImage"
 rm -f "$OUT"
 
 ARCH="$ARCH" "$APPIMAGETOOL" "$APPDIR" "$OUT"
 
-# SHA256
-( cd "$RELEASES_DIR" && sha256sum "$(basename "$OUT")" > "$(basename "$OUT").sha256" )
+# ---- SHA256 ---------------------------------------------------
+(
+  cd "$RELEASES_DIR"
+  sha256sum "$(basename "$OUT")" > "$(basename "$OUT").sha256"
+)
 
 echo
 echo "OK -> $OUT"
 echo "OK -> $OUT.sha256"
 
-# Archive tar.gz de l’AppImage + SHA256
+# ---- Archive tar.gz de l’AppImage + SHA256 -------------------
 TAR="$RELEASES_DIR/${APP_NAME}-${APP_VERSION}-linux-${ARCH}.tar.gz"
-
 (
   cd "$RELEASES_DIR"
   tar -czf "$(basename "$TAR")" "$(basename "$OUT")"
