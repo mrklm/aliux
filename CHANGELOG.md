@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on Keep a Changelog
 and this project follows Semantic Versioning.
 
+
+## [0.1.1] - 2026-02-07
+
+### Modifié
+
+ - Bouton parcourir pour trouver fichier AppImage va directement vers les clé USB
+ - Permission pour auto-installation
+ - Trouver Icone de L'AppImage à installer
+
+### Ajouté
+
+ - Bouton rafraichir (si clé ajoutée)
+
+
+
+---
+
 ## [0.1.0] - 2026-02-05
 
 ### Added

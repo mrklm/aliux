@@ -3,6 +3,7 @@
 
 import os
 import re
+import sys
 import shutil
 import stat
 import subprocess
@@ -27,6 +28,7 @@ DEFAULT_INSTALL_DIR = os.path.join(os.path.expanduser("~"), "Applications")
 
 DESKTOP_DIR = os.path.join(os.path.expanduser("~"), ".local", "share", "applications")
 ICON_DIR = os.path.join(os.path.expanduser("~"), ".local", "share", "icons", "aliux")
+HICOLOR_DIR = os.path.join(os.path.expanduser("~"), ".local", "share", "icons", "hicolor")
 
 ASSETS_DIR = os.path.join(os.path.dirname(__file__), "assets")
 HEADER_IMAGE_PATH = os.path.join(ASSETS_DIR, "aliux.png")
@@ -63,12 +65,25 @@ def slugify(name: str) -> str:
     s = re.sub(r"[\s_-]+", "-", s, flags=re.UNICODE).strip("-")
     return s or "appimage"
 
-
 def set_executable(path: str) -> None:
     st = os.stat(path)
-    os.chmod(path, st.st_mode | stat.S_IXUSR)
+    os.chmod(path, st.st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+    
+def default_browse_dir() -> str:
+    """Dossier de départ pour les boîtes de dialogue (priorité aux supports amovibles)."""
+    user = os.environ.get("USER") or os.environ.get("USERNAME") or ""
+    candidates = []
+    if user:
+        candidates.append(os.path.join("/media", user))
+        candidates.append(os.path.join("/run", "media", user))
+    candidates.append("/media")
+    candidates.append(os.path.expanduser("~"))
 
-
+    for p in candidates:
+        if p and os.path.isdir(p):
+            return p
+    return os.path.expanduser("~")
+    
 def read_text_file(path: str, max_bytes: int = 300_000) -> str:
     with open(path, "rb") as f:
         data = f.read(max_bytes)
@@ -78,6 +93,60 @@ def read_text_file(path: str, max_bytes: int = 300_000) -> str:
         return data.decode(errors="replace")
 
 
+
+def install_icon_to_hicolor(slug: str, src_icon_path: str) -> tuple[str | None, str]:
+    """Installe l'icône dans le thème local hicolor et retourne (chemin_copié, valeur_Icon=).
+
+    But : éviter les chemins exotiques et obtenir un affichage fiable dans les menus (GNOME/KDE/XFCE…).
+    - PNG -> ~/.local/share/icons/hicolor/256x256/apps/<slug>.png (Icon=<slug>)
+    - SVG -> ~/.local/share/icons/hicolor/scalable/apps/<slug>.svg (Icon=<slug>)
+    Fallback : si conversion impossible, copie dans ICON_DIR et utilise un chemin absolu.
+    """
+    if not src_icon_path or not os.path.isfile(src_icon_path):
+        return (None, "application-x-executable")
+
+    ext = os.path.splitext(src_icon_path)[1].lower()
+
+    # SVG : direct
+    if ext == ".svg":
+        dst_dir = os.path.join(HICOLOR_DIR, "scalable", "apps")
+        ensure_dir(dst_dir)
+        dst_path = os.path.join(dst_dir, f"{slug}.svg")
+        shutil.copy2(src_icon_path, dst_path)
+        return (dst_path, slug)
+
+    # PNG : direct
+    if ext == ".png":
+        dst_dir = os.path.join(HICOLOR_DIR, "256x256", "apps")
+        ensure_dir(dst_dir)
+        dst_path = os.path.join(dst_dir, f"{slug}.png")
+        shutil.copy2(src_icon_path, dst_path)
+        return (dst_path, slug)
+
+    # ICO/JPG/JPEG : conversion vers PNG si Pillow est dispo
+    if ext in (".ico", ".jpg", ".jpeg"):
+        if PIL_OK:
+            try:
+                dst_dir = os.path.join(HICOLOR_DIR, "256x256", "apps")
+                ensure_dir(dst_dir)
+                dst_path = os.path.join(dst_dir, f"{slug}.png")
+                img = Image.open(src_icon_path)  # type: ignore[name-defined]
+                img = img.convert("RGBA")
+                img.save(dst_path, format="PNG")
+                return (dst_path, slug)
+            except Exception:
+                pass
+
+    # Fallback : copie telle quelle dans ICON_DIR et référence par chemin absolu
+    ensure_dir(ICON_DIR)
+    if ext not in (".png", ".svg", ".ico", ".jpg", ".jpeg"):
+        ext = ".png"
+    dst_path = os.path.join(ICON_DIR, f"{slug}{ext}")
+    try:
+        shutil.copy2(src_icon_path, dst_path)
+    except Exception:
+        return (None, "application-x-executable")
+    return (dst_path, dst_path)
 def parse_desktop_file(desktop_path: str) -> dict:
     """Parse simple d'un .desktop (section [Desktop Entry]) -> dict clé=valeur."""
     out = {}
@@ -131,7 +200,16 @@ def _fit_header_image(path: str, max_w: int, max_h: int) -> tk.PhotoImage:
 
 
 def find_best_icon_in_extract(root_dir: str, icon_hint: str | None) -> str | None:
-    """Cherche une icône PNG/SVG dans l'AppImage extraite."""
+    """Cherche une icône PNG/SVG dans l'AppImage extraite.
+
+    Ordre de préférence :
+    0) .DirIcon (si présent)
+    1) Icon=... du .desktop (nom ou chemin)
+    2) hicolor/*/apps (png/svg)
+    3) usr/share/pixmaps
+    4) plus gros PNG trouvé
+    5) un SVG quelconque
+    """
     candidates: list[str] = []
 
     def walk_files():
@@ -141,15 +219,36 @@ def find_best_icon_in_extract(root_dir: str, icon_hint: str | None) -> str | Non
                 if low.endswith(".png") or low.endswith(".svg"):
                     yield os.path.join(base, fn)
 
+    # 0) .DirIcon (fréquent dans les AppImage)
+    diricon = os.path.join(root_dir, ".DirIcon")
+    if os.path.exists(diricon):
+        try:
+            # Dans certains cas c'est un lien symbolique
+            real = os.path.realpath(diricon)
+            if os.path.isfile(real):
+                low = real.lower()
+                if low.endswith(".png") or low.endswith(".svg"):
+                    return real
+        except Exception:
+            pass
+
     # 1) hint (Icon=)
     if icon_hint:
         hint = icon_hint.strip()
+
+        # 1a) Si Icon= est un chemin absolu "dans" l'AppImage, tenter la résolution directe
+        if hint.startswith("/"):
+            direct = os.path.join(root_dir, hint.lstrip("/"))
+            if os.path.isfile(direct) and (direct.lower().endswith(".png") or direct.lower().endswith(".svg")):
+                return direct
+
         possible = {hint, os.path.basename(hint), os.path.splitext(os.path.basename(hint))[0]}
         for p in walk_files():
             bn = os.path.basename(p)
             bn_noext = os.path.splitext(bn)[0]
             if bn in possible or bn_noext in possible:
                 candidates.append(p)
+
         pngs = [c for c in candidates if c.lower().endswith(".png")]
         svgs = [c for c in candidates if c.lower().endswith(".svg")]
         if pngs:
@@ -158,6 +257,7 @@ def find_best_icon_in_extract(root_dir: str, icon_hint: str | None) -> str | Non
             return svgs[0]
 
     # 2) hicolor apps
+    candidates = []
     hicolor = os.path.join(root_dir, "usr", "share", "icons", "hicolor")
     if os.path.isdir(hicolor):
         for base, _dirs, files in os.walk(hicolor):
@@ -173,12 +273,25 @@ def find_best_icon_in_extract(root_dir: str, icon_hint: str | None) -> str | Non
                 return max(pngs, key=lambda x: os.path.getsize(x))
             return candidates[0]
 
-    # 3) biggest PNG anywhere
+    # 3) usr/share/pixmaps
+    pixmaps = os.path.join(root_dir, "usr", "share", "pixmaps")
+    if os.path.isdir(pixmaps):
+        for fn in os.listdir(pixmaps):
+            low = fn.lower()
+            if low.endswith(".png") or low.endswith(".svg"):
+                candidates.append(os.path.join(pixmaps, fn))
+        if candidates:
+            pngs = [c for c in candidates if c.lower().endswith(".png")]
+            if pngs:
+                return max(pngs, key=lambda x: os.path.getsize(x))
+            return candidates[0]
+
+    # 4) biggest PNG anywhere
     all_png = [p for p in walk_files() if p.lower().endswith(".png")]
     if all_png:
         return max(all_png, key=lambda x: os.path.getsize(x))
 
-    # 4) any SVG
+    # 5) any SVG
     all_svg = [p for p in walk_files() if p.lower().endswith(".svg")]
     if all_svg:
         return all_svg[0]
@@ -307,6 +420,9 @@ class AliuxApp(tk.Tk):
 
         # ? Aide (cochée au démarrage)
         self.var_help = tk.BooleanVar(value=True)
+
+        # Dossier de départ pour les sélecteurs de fichiers (USB / media)
+        self.last_browse_dir = default_browse_dir()
 
         # Références images (sinon Tkinter les perd)
         self._header_img = None
@@ -483,7 +599,9 @@ class AliuxApp(tk.Tk):
         row.pack(fill="x", padx=pad, pady=(pad, 0))
 
         ttk.Button(row, text="Choisir…", command=self.on_choose_file).pack(side="left")
+        ttk.Button(row, text="🔄", width=3, command=self.on_refresh_mounts).pack(side="left", padx=(6, 0))
         ttk.Entry(row, textvariable=self.var_file).pack(side="left", fill="x", expand=True, padx=(10, 0))
+
 
         hint = ttk.Label(frm_file, text="Veuillez sélectionner un fichier .AppImage.")
         hint.pack(anchor="w", padx=pad, pady=(6, pad))
@@ -575,15 +693,23 @@ class AliuxApp(tk.Tk):
         self.txt_log = tk.Text(frm_log, height=12, wrap="word")
         self.txt_log.pack(fill="both", expand=True, padx=pad, pady=pad)
         self.txt_log.configure(state="disabled")
+        
+    def on_refresh_mounts(self):
+        self.last_browse_dir = default_browse_dir()
+        self.log(f"🔄 Dossier de navigation mis à jour : {self.last_browse_dir}")
+
 
     def on_choose_file(self):
         path = filedialog.askopenfilename(
             title="Veuillez choisir un fichier AppImage",
-            filetypes=[("AppImage", "*.AppImage *.appimage"), ("Tous les fichiers", "*.*")],
+            initialdir=self.last_browse_dir,
+            filetypes=[("AppImage", "*.AppImage *.appimage"), ("Tous les fichiers", "*.*")]
         )
+
         if not path:
             return
 
+        self.last_browse_dir = os.path.dirname(path)
         self.var_file.set(path)
         self.log(f"Fichier sélectionné : {path}")
 
@@ -618,16 +744,14 @@ class AliuxApp(tk.Tk):
     def on_choose_icon_path(self):
         path = filedialog.askopenfilename(
             title="Veuillez choisir une icône",
-            filetypes=[
-                ("Images", "*.png *.svg *.ico *.jpg *.jpeg"),
-                ("PNG", "*.png"),
-                ("SVG", "*.svg"),
-                ("ICO", "*.ico"),
-                ("Tous les fichiers", "*.*"),
-            ],
+            initialdir=self.last_browse_dir,
+            filetypes=[("Images", "*.png *.svg *.ico"), ("Tous les fichiers", "*.*")]
         )
+
         if not path:
             return
+        
+        self.last_browse_dir = os.path.dirname(path)
         self.var_icon_path.set(path)
         self.log(f"Icône sélectionnée : {path}")
 
@@ -698,34 +822,36 @@ class AliuxApp(tk.Tk):
             self.log("Permissions : exécutable (chmod +x)")
 
             # Icône : priorité à l'icône manuelle
-            icon_dst = None
+            icon_dst: str | None = None
+            icon_line = "application-x-executable"
+            icon_source: str | None = None
 
             if manual_icon:
                 self.log("Icône : utilisation du chemin d’icône sélectionné.")
-                ext = os.path.splitext(manual_icon)[1].lower()
-                if ext not in (".png", ".svg", ".ico", ".jpg", ".jpeg"):
-                    ext = ".png"
-                icon_dst = os.path.join(ICON_DIR, f"{slug}{ext}")
-                shutil.copy2(manual_icon, icon_dst)
-                self.log(f"Icône copiée : {icon_dst}")
+                icon_source = manual_icon
             elif self.var_extract_icon.get():
                 self.log("Extraction d’icône : tentative via --appimage-extract…")
                 _suggested_name, icon_src, _icon_hint = try_extract_appimage_metadata(dst_appimage)
                 if icon_src and os.path.isfile(icon_src):
-                    ext = os.path.splitext(icon_src)[1].lower()
-                    if ext not in (".png", ".svg"):
-                        ext = ".png"
-                    icon_dst = os.path.join(ICON_DIR, f"{slug}{ext}")
-                    shutil.copy2(icon_src, icon_dst)
-                    self.log(f"Icône extraite : {icon_dst}")
+                    icon_source = icon_src
                 else:
                     self.log("Icône : aucune icône exploitable trouvée dans l’AppImage.")
             else:
                 self.log("Icône : extraction désactivée.")
 
+            if icon_source:
+                try:
+                    icon_dst, icon_line = install_icon_to_hicolor(slug, icon_source)
+                    if icon_dst:
+                        self.log(f"Icône installée : {icon_dst}")
+                    else:
+                        self.log("Icône : installation échouée, utilisation de l'icône par défaut.")
+                except Exception:
+                    self.log("Icône : installation échouée, utilisation de l'icône par défaut.")
+
             desktop_path = os.path.join(DESKTOP_DIR, f"{slug}.desktop")
             exec_line = f'"{dst_appimage}" %U'
-            icon_line = icon_dst if icon_dst else "application-x-executable"
+            # icon_line est défini plus haut (nom dans hicolor ou chemin absolu fallback)
 
             desktop_content = (
                 "[Desktop Entry]\n"
@@ -750,6 +876,17 @@ class AliuxApp(tk.Tk):
             try:
                 subprocess.run(
                     ["update-desktop-database", DESKTOP_DIR],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    check=False,
+                )
+            except Exception:
+                pass
+
+            self.log("Mise à jour du cache des icônes (optionnel)…")
+            try:
+                subprocess.run(
+                    ["gtk-update-icon-cache", "-f", "-t", HICOLOR_DIR],
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
                     check=False,
