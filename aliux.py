@@ -21,13 +21,14 @@ except Exception:
 
 
 APP_TITLE = "Aliux"
-APP_VERSION = "0.1.2"
+APP_VERSION = "0.1.0"
 
 
 DEFAULT_INSTALL_DIR = os.path.join(os.path.expanduser("~"), "Applications")
 
 DESKTOP_DIR = os.path.join(os.path.expanduser("~"), ".local", "share", "applications")
 ICON_DIR = os.path.join(os.path.expanduser("~"), ".local", "share", "icons", "aliux")
+HICOLOR_DIR = os.path.join(os.path.expanduser("~"), ".local", "share", "icons", "hicolor")
 
 ASSETS_DIR = os.path.join(os.path.dirname(__file__), "assets")
 HEADER_IMAGE_PATH = os.path.join(ASSETS_DIR, "aliux.png")
@@ -64,10 +65,9 @@ def slugify(name: str) -> str:
     s = re.sub(r"[\s_-]+", "-", s, flags=re.UNICODE).strip("-")
     return s or "appimage"
 
-
 def set_executable(path: str) -> None:
     st = os.stat(path)
-    os.chmod(path, st.st_mode | stat.S_IXUSR)
+    os.chmod(path, st.st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
     
 def default_browse_dir() -> str:
     """Dossier de départ pour les boîtes de dialogue (priorité aux supports amovibles)."""
@@ -83,6 +83,61 @@ def default_browse_dir() -> str:
         if p and os.path.isdir(p):
             return p
     return os.path.expanduser("~")
+
+
+_USB_PERMS_WARNED = False
+
+
+def warn_usb_permissions_once(parent: tk.Misc | None = None) -> None:
+    """Avertit si Aliux semble lancé depuis une clé USB (/media/$USER/...).
+
+    But:
+      - expliquer pourquoi le bit exécutable ne "tient" pas toujours sur FAT/exFAT/NTFS
+      - indiquer un chemin exact (montage) et la commande chmod à exécuter
+    """
+    global _USB_PERMS_WARNED
+    if _USB_PERMS_WARNED:
+        return
+
+    try:
+        user = os.environ.get("USER") or os.environ.get("USERNAME") or ""
+        media_root = os.path.join("/media", user) + os.sep if user else "/media/"
+
+        # Si on tourne en AppImage, APPIMAGE pointe vers le fichier .AppImage original (probablement sur la clé)
+        probe = os.environ.get("APPIMAGE") or sys.argv[0]
+        probe = os.path.realpath(probe)
+
+        if not probe.startswith(media_root):
+            return
+
+        # Déduire le nom du volume (NOM_DE_LA_CLE) à partir du chemin /media/$USER/NOM/...
+        rel = probe[len(media_root):]
+        volume = rel.split(os.sep, 1)[0] if rel else ""
+        if not volume:
+            return
+
+        mount_path = os.path.join("/media", user, volume) if user else os.path.join("/media", volume)
+
+        _USB_PERMS_WARNED = True
+
+        msg = (
+            "Aliux est lancé depuis un support amovible (clé USB).\n\n"
+            "Sur ce type de support, les permissions d'exécution ne peuvent pas être conservées.\n\n"
+            "Pour rendre ce fichier .AppImage exécutable, ouvrez un terminal dans :\n\n"
+            f"{mount_path}\n\n"
+            "et exécutez :\n\n"
+            "chmod +x Aliux.AppImage\n\n"
+            "Remarque : après avoir débranché/rebranché la clé, il peut être nécessaire de refaire cette commande."
+        )
+
+        if parent is not None:
+            messagebox.showinfo("Permissions sur clé USB", msg, parent=parent)
+        else:
+            messagebox.showinfo("Permissions sur clé USB", msg)
+    except Exception:
+        # Ne jamais casser l'application pour un message informatif.
+        return
+
     
 def read_text_file(path: str, max_bytes: int = 300_000) -> str:
     with open(path, "rb") as f:
@@ -93,6 +148,60 @@ def read_text_file(path: str, max_bytes: int = 300_000) -> str:
         return data.decode(errors="replace")
 
 
+
+def install_icon_to_hicolor(slug: str, src_icon_path: str) -> tuple[str | None, str]:
+    """Installe l'icône dans le thème local hicolor et retourne (chemin_copié, valeur_Icon=).
+
+    But : éviter les chemins exotiques et obtenir un affichage fiable dans les menus (GNOME/KDE/XFCE…).
+    - PNG -> ~/.local/share/icons/hicolor/256x256/apps/<slug>.png (Icon=<slug>)
+    - SVG -> ~/.local/share/icons/hicolor/scalable/apps/<slug>.svg (Icon=<slug>)
+    Fallback : si conversion impossible, copie dans ICON_DIR et utilise un chemin absolu.
+    """
+    if not src_icon_path or not os.path.isfile(src_icon_path):
+        return (None, "application-x-executable")
+
+    ext = os.path.splitext(src_icon_path)[1].lower()
+
+    # SVG : direct
+    if ext == ".svg":
+        dst_dir = os.path.join(HICOLOR_DIR, "scalable", "apps")
+        ensure_dir(dst_dir)
+        dst_path = os.path.join(dst_dir, f"{slug}.svg")
+        shutil.copy2(src_icon_path, dst_path)
+        return (dst_path, slug)
+
+    # PNG : direct
+    if ext == ".png":
+        dst_dir = os.path.join(HICOLOR_DIR, "256x256", "apps")
+        ensure_dir(dst_dir)
+        dst_path = os.path.join(dst_dir, f"{slug}.png")
+        shutil.copy2(src_icon_path, dst_path)
+        return (dst_path, slug)
+
+    # ICO/JPG/JPEG : conversion vers PNG si Pillow est dispo
+    if ext in (".ico", ".jpg", ".jpeg"):
+        if PIL_OK:
+            try:
+                dst_dir = os.path.join(HICOLOR_DIR, "256x256", "apps")
+                ensure_dir(dst_dir)
+                dst_path = os.path.join(dst_dir, f"{slug}.png")
+                img = Image.open(src_icon_path)  # type: ignore[name-defined]
+                img = img.convert("RGBA")
+                img.save(dst_path, format="PNG")
+                return (dst_path, slug)
+            except Exception:
+                pass
+
+    # Fallback : copie telle quelle dans ICON_DIR et référence par chemin absolu
+    ensure_dir(ICON_DIR)
+    if ext not in (".png", ".svg", ".ico", ".jpg", ".jpeg"):
+        ext = ".png"
+    dst_path = os.path.join(ICON_DIR, f"{slug}{ext}")
+    try:
+        shutil.copy2(src_icon_path, dst_path)
+    except Exception:
+        return (None, "application-x-executable")
+    return (dst_path, dst_path)
 def parse_desktop_file(desktop_path: str) -> dict:
     """Parse simple d'un .desktop (section [Desktop Entry]) -> dict clé=valeur."""
     out = {}
@@ -146,7 +255,16 @@ def _fit_header_image(path: str, max_w: int, max_h: int) -> tk.PhotoImage:
 
 
 def find_best_icon_in_extract(root_dir: str, icon_hint: str | None) -> str | None:
-    """Cherche une icône PNG/SVG dans l'AppImage extraite."""
+    """Cherche une icône PNG/SVG dans l'AppImage extraite.
+
+    Ordre de préférence :
+    0) .DirIcon (si présent)
+    1) Icon=... du .desktop (nom ou chemin)
+    2) hicolor/*/apps (png/svg)
+    3) usr/share/pixmaps
+    4) plus gros PNG trouvé
+    5) un SVG quelconque
+    """
     candidates: list[str] = []
 
     def walk_files():
@@ -156,15 +274,36 @@ def find_best_icon_in_extract(root_dir: str, icon_hint: str | None) -> str | Non
                 if low.endswith(".png") or low.endswith(".svg"):
                     yield os.path.join(base, fn)
 
+    # 0) .DirIcon (fréquent dans les AppImage)
+    diricon = os.path.join(root_dir, ".DirIcon")
+    if os.path.exists(diricon):
+        try:
+            # Dans certains cas c'est un lien symbolique
+            real = os.path.realpath(diricon)
+            if os.path.isfile(real):
+                low = real.lower()
+                if low.endswith(".png") or low.endswith(".svg"):
+                    return real
+        except Exception:
+            pass
+
     # 1) hint (Icon=)
     if icon_hint:
         hint = icon_hint.strip()
+
+        # 1a) Si Icon= est un chemin absolu "dans" l'AppImage, tenter la résolution directe
+        if hint.startswith("/"):
+            direct = os.path.join(root_dir, hint.lstrip("/"))
+            if os.path.isfile(direct) and (direct.lower().endswith(".png") or direct.lower().endswith(".svg")):
+                return direct
+
         possible = {hint, os.path.basename(hint), os.path.splitext(os.path.basename(hint))[0]}
         for p in walk_files():
             bn = os.path.basename(p)
             bn_noext = os.path.splitext(bn)[0]
             if bn in possible or bn_noext in possible:
                 candidates.append(p)
+
         pngs = [c for c in candidates if c.lower().endswith(".png")]
         svgs = [c for c in candidates if c.lower().endswith(".svg")]
         if pngs:
@@ -173,6 +312,7 @@ def find_best_icon_in_extract(root_dir: str, icon_hint: str | None) -> str | Non
             return svgs[0]
 
     # 2) hicolor apps
+    candidates = []
     hicolor = os.path.join(root_dir, "usr", "share", "icons", "hicolor")
     if os.path.isdir(hicolor):
         for base, _dirs, files in os.walk(hicolor):
@@ -188,12 +328,25 @@ def find_best_icon_in_extract(root_dir: str, icon_hint: str | None) -> str | Non
                 return max(pngs, key=lambda x: os.path.getsize(x))
             return candidates[0]
 
-    # 3) biggest PNG anywhere
+    # 3) usr/share/pixmaps
+    pixmaps = os.path.join(root_dir, "usr", "share", "pixmaps")
+    if os.path.isdir(pixmaps):
+        for fn in os.listdir(pixmaps):
+            low = fn.lower()
+            if low.endswith(".png") or low.endswith(".svg"):
+                candidates.append(os.path.join(pixmaps, fn))
+        if candidates:
+            pngs = [c for c in candidates if c.lower().endswith(".png")]
+            if pngs:
+                return max(pngs, key=lambda x: os.path.getsize(x))
+            return candidates[0]
+
+    # 4) biggest PNG anywhere
     all_png = [p for p in walk_files() if p.lower().endswith(".png")]
     if all_png:
         return max(all_png, key=lambda x: os.path.getsize(x))
 
-    # 4) any SVG
+    # 5) any SVG
     all_svg = [p for p in walk_files() if p.lower().endswith(".svg")]
     if all_svg:
         return all_svg[0]
@@ -339,6 +492,9 @@ class AliuxApp(tk.Tk):
 
         # affiche l'aide au démarrage
         self._show_help(force=True)
+
+        # Avertissement si l'application est lancée depuis une clé USB (/media/$USER/...)
+        self.after(250, lambda: warn_usb_permissions_once(self))
 
     def _apply_window_icon(self):
         try:
@@ -698,11 +854,7 @@ class AliuxApp(tk.Tk):
 
             slug = slugify(name)
 
-            # Un dossier par application pour éviter de tout mettre en vrac
-            app_dir = os.path.join(install_dir, slug)
-            ensure_dir(app_dir)
-
-            dst_appimage = os.path.join(app_dir, f"{slug}.AppImage")
+            dst_appimage = os.path.join(install_dir, f"{slug}.AppImage")
 
             if os.path.exists(dst_appimage):
                 choice = {"val": None}
@@ -728,34 +880,36 @@ class AliuxApp(tk.Tk):
             self.log("Permissions : exécutable (chmod +x)")
 
             # Icône : priorité à l'icône manuelle
-            icon_dst = None
+            icon_dst: str | None = None
+            icon_line = "application-x-executable"
+            icon_source: str | None = None
 
             if manual_icon:
                 self.log("Icône : utilisation du chemin d’icône sélectionné.")
-                ext = os.path.splitext(manual_icon)[1].lower()
-                if ext not in (".png", ".svg", ".ico", ".jpg", ".jpeg"):
-                    ext = ".png"
-                icon_dst = os.path.join(ICON_DIR, f"{slug}{ext}")
-                shutil.copy2(manual_icon, icon_dst)
-                self.log(f"Icône copiée : {icon_dst}")
+                icon_source = manual_icon
             elif self.var_extract_icon.get():
                 self.log("Extraction d’icône : tentative via --appimage-extract…")
                 _suggested_name, icon_src, _icon_hint = try_extract_appimage_metadata(dst_appimage)
                 if icon_src and os.path.isfile(icon_src):
-                    ext = os.path.splitext(icon_src)[1].lower()
-                    if ext not in (".png", ".svg"):
-                        ext = ".png"
-                    icon_dst = os.path.join(ICON_DIR, f"{slug}{ext}")
-                    shutil.copy2(icon_src, icon_dst)
-                    self.log(f"Icône extraite : {icon_dst}")
+                    icon_source = icon_src
                 else:
                     self.log("Icône : aucune icône exploitable trouvée dans l’AppImage.")
             else:
                 self.log("Icône : extraction désactivée.")
 
+            if icon_source:
+                try:
+                    icon_dst, icon_line = install_icon_to_hicolor(slug, icon_source)
+                    if icon_dst:
+                        self.log(f"Icône installée : {icon_dst}")
+                    else:
+                        self.log("Icône : installation échouée, utilisation de l'icône par défaut.")
+                except Exception:
+                    self.log("Icône : installation échouée, utilisation de l'icône par défaut.")
+
             desktop_path = os.path.join(DESKTOP_DIR, f"{slug}.desktop")
             exec_line = f'"{dst_appimage}" %U'
-            icon_line = icon_dst if icon_dst else "application-x-executable"
+            # icon_line est défini plus haut (nom dans hicolor ou chemin absolu fallback)
 
             desktop_content = (
                 "[Desktop Entry]\n"
@@ -780,6 +934,17 @@ class AliuxApp(tk.Tk):
             try:
                 subprocess.run(
                     ["update-desktop-database", DESKTOP_DIR],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    check=False,
+                )
+            except Exception:
+                pass
+
+            self.log("Mise à jour du cache des icônes (optionnel)…")
+            try:
+                subprocess.run(
+                    ["gtk-update-icon-cache", "-f", "-t", HICOLOR_DIR],
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
                     check=False,
@@ -870,22 +1035,12 @@ class AliuxApp(tk.Tk):
                     removed.append(dp)
                 except Exception as e:
                     errors.append(f"{dp} : {e}")
+
             ap = item.get("appimage_path")
             if ap and os.path.exists(ap):
                 try:
                     os.remove(ap)
                     removed.append(ap)
-
-                    # Si Aliux a créé un dossier dédié (~/Applications/<slug>/),
-                    # on tente de le supprimer s'il est vide.
-                    try:
-                        parent_dir = os.path.dirname(ap)
-                        if parent_dir and os.path.isdir(parent_dir) and not os.listdir(parent_dir):
-                            os.rmdir(parent_dir)
-                            removed.append(parent_dir)
-                    except Exception:
-                        pass
-
                 except Exception as e:
                     errors.append(f"{ap} : {e}")
 
@@ -928,81 +1083,29 @@ class AliuxApp(tk.Tk):
         try:
             ensure_dir(DESKTOP_DIR)
             ensure_dir(ICON_DIR)
-            ensure_dir(HICOLOR_DIR)
 
-            # Si Aliux tourne en AppImage, on installe l'AppImage elle-même
-            # (sinon, on installe un lanceur qui exécute python3 + aliux.py).
-            src_appimage = os.environ.get("APPIMAGE")
-            installed_appimage: str | None = None
-
-            if src_appimage and os.path.isfile(src_appimage):
-                # Dossier dédié pour Aliux
-                aliux_dir = os.path.join(DEFAULT_INSTALL_DIR, "Aliux")
-                ensure_dir(aliux_dir)
-
-                installed_appimage = os.path.join(aliux_dir, "Aliux.AppImage")
-                try:
-                    shutil.copy2(src_appimage, installed_appimage)
-                    set_executable(installed_appimage)
-                    self.log(f"Aliux AppImage copiée : {installed_appimage}")
-                except Exception as e:
-                    raise RuntimeError(f"Copie de l'AppImage Aliux impossible : {e}") from e
-
-            # Icône Aliux
-            icon_dst: str | None = None
-            icon_key = "application-x-executable"
-
+            icon_dst = None
             if os.path.isfile(HEADER_IMAGE_PATH):
+                icon_dst = os.path.join(ICON_DIR, "aliux.png")
                 try:
-                    icon_dst, icon_key = install_icon_to_hicolor("aliux", HEADER_IMAGE_PATH)
+                    shutil.copy2(HEADER_IMAGE_PATH, icon_dst)
                 except Exception:
                     icon_dst = None
-                    icon_key = "application-x-executable"
 
+            script_path = os.path.abspath(__file__)
             desktop_path = os.path.join(DESKTOP_DIR, "aliux.desktop")
 
-            if installed_appimage:
-                exec_line = f'"{installed_appimage}" %U'
-                note = (
-                    "Aliux a été ajouté au menu des applications.
-
-"
-                    "Lanceur : AppImage installée localement.
-"
-                )
-            else:
-                script_path = os.path.abspath(__file__)
-                exec_line = f'python3 "{script_path}"'
-                note = (
-                    "Aliux a été ajouté au menu des applications.
-
-"
-                    "Note : ce lanceur exécute python3 + le fichier aliux.py.
-"
-                    "Après packaging (AppImage), on remplacera Exec par l’AppImage."
-                )
-
             desktop_content = (
-                "[Desktop Entry]
-"
-                "Type=Application
-"
-                "Name=Aliux
-"
-                "Comment=Installateur AppImage local
-"
-                f"Exec={exec_line}
-"
-                f"Icon={icon_key}
-"
-                "Terminal=false
-"
-                "Categories=Utility;
-"
-                "StartupNotify=true
-"
-                "X-Aliux-Self=true
-"
+                "[Desktop Entry]\n"
+                "Type=Application\n"
+                "Name=Aliux\n"
+                "Comment=Installateur AppImage local\n"
+                f"Exec=python3 \"{script_path}\"\n"
+                f"Icon={icon_dst if icon_dst else 'application-x-executable'}\n"
+                "Terminal=false\n"
+                "Categories=Utility;\n"
+                "StartupNotify=true\n"
+                "X-Aliux-Self=true\n"
             )
 
             with open(desktop_path, "w", encoding="utf-8") as f:
@@ -1018,24 +1121,16 @@ class AliuxApp(tk.Tk):
             except Exception:
                 pass
 
-            try:
-                subprocess.run(
-                    ["gtk-update-icon-cache", "-f", "-t", HICOLOR_DIR],
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                    check=False,
-                )
-            except Exception:
-                pass
-
             self.log(f"✅ Lanceur Aliux créé : {desktop_path}")
-            messagebox.showinfo("Aliux", note)
-
+            messagebox.showinfo(
+                "Aliux",
+                "Aliux a été ajouté au menu des applications.\n\n"
+                "Note : ce lanceur exécute python3 + le fichier aliux.py.\n"
+                "Après packaging (AppImage), on remplacera Exec par l’AppImage.",
+            )
         except Exception as e:
             self.log(f"❌ Lanceur Aliux : {e}")
-            messagebox.showerror("Erreur", f"Impossible de créer le lanceur Aliux :
-
-{e}")
+            messagebox.showerror("Erreur", f"Impossible de créer le lanceur Aliux :\n\n{e}")
 
 
 if __name__ == "__main__":
