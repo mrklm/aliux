@@ -21,7 +21,7 @@ except Exception:
 
 
 APP_TITLE = "Aliux"
-APP_VERSION = "0.1.0"
+APP_VERSION = "0.1.2"
 
 
 DEFAULT_INSTALL_DIR = os.path.join(os.path.expanduser("~"), "Applications")
