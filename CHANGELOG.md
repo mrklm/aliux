@@ -6,6 +6,18 @@ The format is based on Keep a Changelog
 and this project follows Semantic Versioning.
 
 
+## [0.1.2] - 2026-02-08
+
+### Modifié
+
+ - Donne bien la permission necéssaire a Aliux lors de l'auto-installation
+
+### Ajouté
+
+ - Un dossier par programme est mainteant créé dans Applications
+
+---
+
 ## [0.1.1] - 2026-02-07
 
 ### Modifié
