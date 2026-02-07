@@ -16,6 +16,19 @@ cd "$ROOT_DIR"
 
 APP_NAME="Aliux"
 
+# ---- Vérifications dépendances système ----------------------
+need_cmd() { command -v "$1" >/dev/null 2>&1; }
+die() { echo "ERREUR: $*" >&2; exit 1; }
+
+need_cmd python3.12 || die "python3.12 est requis (ex: sudo apt install -y python3.12 python3.12-venv)"
+need_cmd curl      || die "curl est requis (ex: sudo apt install -y curl)"
+need_cmd objdump   || die "objdump est requis (paquet binutils) (ex: sudo apt install -y binutils)"
+
+# Vérifier que le module venv est disponible (python3.12-venv)
+python3.12 - <<'PY' >/dev/null 2>&1 || die "Le module venv manque pour python3.12 (installez python3.12-venv)"
+import venv
+PY
+
 # ---- Architecture (auto) ------------------------------------
 ARCH="$(uname -m)"
 case "$ARCH" in
@@ -139,10 +152,6 @@ else
 fi
 
 # ---- Récupération appimagetool -------------------------------
-if ! command -v curl >/dev/null 2>&1; then
-  echo "ERREUR: curl est requis (ex: sudo apt install -y curl)"
-  exit 1
-fi
 
 APPIMAGETOOL="$BUILD_DIR/appimagetool-${ARCH}.AppImage"
 if [[ ! -f "$APPIMAGETOOL" ]]; then

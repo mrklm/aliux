@@ -1,0 +1,26 @@
+ALIUX – LIRE AVANT DE DÉMARRER
+
+Pour des raisons de sécurité, Linux n’autorise pas l’exécution directe
+de programmes depuis les clés USB.
+
+Aliux doit d’abord être copié sur l’ordinateur pour fonctionner.
+
+INSTALLATION (1 minute) :
+
+1) Copiez le fichier :
+   Aliux-0.1.3-linux-x86_64.AppImage
+   sur votre ordinateur (par exemple sur le Bureau).
+
+2) Autorisez l’exécution du fichier :
+   - clic droit sur le fichier
+   - Propriétés
+   - onglet Permissions
+   - activez : « Exécutable comme programme »
+
+3) Fermez la fenêtre puis double-cliquez sur le fichier.
+
+4) Dans Aliux, cliquez sur :
+   « Installer Aliux »
+
+Aliux sera alors installé sur votre ordinateur
+et fonctionnera ensuite sans la clé USB.
