@@ -6,11 +6,23 @@ The format is based on Keep a Changelog
 and this project follows Semantic Versioning.
 
 
+
+
+## [0.1.4] - 2026-02-08
+
+### Modifié
+
+ - Modification de l'interface graphique
+
+ ---
+
 ## [0.1.3] - 2026-02-08
 
 ### Modifié
 
  - Correction du lanceur desktop
+
+ ---
 
 ## [0.1.2] - 2026-02-08
 
@@ -35,8 +47,6 @@ and this project follows Semantic Versioning.
 ### Ajouté
 
  - Bouton rafraichir (si clé ajoutée)
-
-
 
 ---
 

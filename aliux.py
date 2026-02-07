@@ -21,7 +21,7 @@ except Exception:
 
 
 APP_TITLE = "Aliux"
-APP_VERSION = "0.1.3"
+APP_VERSION = "0.1.4"
 
 
 DEFAULT_INSTALL_DIR = os.path.join(os.path.expanduser("~"), "Applications")
@@ -34,8 +34,8 @@ HEADER_IMAGE_PATH = os.path.join(ASSETS_DIR, "aliux.png")
 HELP_MD_PATH = os.path.join(ASSETS_DIR, "AIDE.md")
 
 # Taille max bannière (réglage simple)
-HEADER_MAX_W = 510
-HEADER_MAX_H = 165
+HEADER_MAX_W = 340
+HEADER_MAX_H = 110
 
 ALIUX_DESKTOP_TAG = "X-Aliux-Installer"
 ALIUX_DESKTOP_TAG_VALUE = "true"
@@ -463,7 +463,9 @@ class AliuxApp(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title(f"{APP_TITLE} v{APP_VERSION}")
-        self.minsize(900, 650)
+        self.geometry("600x650")   # largeur de départ
+        self.minsize(600, 650)     # largeur minimale (hauteur inchangée)
+
 
         self.var_file = tk.StringVar()
         self.var_name = tk.StringVar()
