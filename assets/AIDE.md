@@ -21,6 +21,8 @@ sans passer par le terminal.
 
 L’application apparaît ensuite dans le menu du système.
 
+--> clic doit --> "épingler au dash"
+
 ---
 
 ## Icônes
@@ -64,4 +66,6 @@ Le bouton **Installer Aliux dans le menu** ajoute Aliux au menu des applications
 
 ---
 
-Aliux fait une chose, et la fait proprement.
+Aliux permet de rendre plus confortable Linux,
+et ainsi de l'aider dans sa tache: 
+conquérir le monde.

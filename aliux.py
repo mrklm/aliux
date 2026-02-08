@@ -567,6 +567,7 @@ class AliuxApp(tk.Tk):
         """
         if self.var_help.get():
             self.open_journal(expand=True)
+            self._show_help(force=True)
     def toggle_journal(self):
         """Ouvre/ferme le panneau de journal (à droite)."""
         if self._log_open:
@@ -838,8 +839,7 @@ class AliuxApp(tk.Tk):
 
         bar_log = ttk.Frame(frm_log)
         bar_log.pack(fill="x", padx=pad, pady=(pad, 0))
-        ttk.Button(bar_log, text="Réduire", command=self.close_journal).pack(side="left")
-        ttk.Button(bar_log, text="Effacer", command=self._clear_log).pack(side="left", padx=(10, 0))
+        ttk.Button(bar_log, text="←", command=self.close_journal).pack(side="left")
 
         self.txt_log = tk.Text(frm_log, height=22, wrap="word")
         self.txt_log.pack(fill="both", expand=True, padx=pad, pady=pad)
