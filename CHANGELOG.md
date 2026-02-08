@@ -12,9 +12,9 @@ and this project follows Semantic Versioning.
 
 ### Modifié
 
+ - Modification de l'interface graphique: ré organisation de la section "Icône" 
 
-
- ---
+---
 
 ## [0.1.6] - 2026-02-08
 
@@ -22,7 +22,7 @@ and this project follows Semantic Versioning.
 
  - Un répertoire est bien créé pour chaque programme installé dans Applications
 
- ---
+---
 
 ## [0.1.5] - 2026-02-08
 

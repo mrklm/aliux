@@ -21,7 +21,7 @@ except Exception:
 
 
 APP_TITLE = "Aliux"
-APP_VERSION = "0.1.6"
+APP_VERSION = "0.1.7"
 
 
 DEFAULT_INSTALL_DIR = os.path.join(os.path.expanduser("~"), "Applications")
@@ -788,29 +788,32 @@ class AliuxApp(tk.Tk):
         ).grid(row=2, column=1, sticky="ew", pady=4)
 
 
-        # Ligne extraction icône + bouton chemin icône (dans une ligne dédiée)
-        row_icon = ttk.Frame(grid)
-        row_icon.grid(row=4, column=0, columnspan=2, sticky="ew", pady=(8, 0))
+        # Icône : répartition sur 2 lignes
+        # Ligne 1 : "Icône :" + (checkbox extraction)
+        row_icon_top = ttk.Frame(grid)
+        row_icon_top.grid(row=4, column=0, columnspan=2, sticky="w", pady=(8, 0))
+
+        ttk.Label(row_icon_top, text="Icône :").pack(side="left", padx=(0, 10))
 
         ttk.Checkbutton(
-            row_icon,
+            row_icon_top,
             variable=self.var_extract_icon,
             text="Tenter d’extraire une icône depuis l’AppImage (recommandé)",
         ).pack(side="left", anchor="w")
 
+        # Ligne 2 : bouton "Chemin icône…" + champ chemin
+        row_icon_bottom = ttk.Frame(grid)
+        row_icon_bottom.grid(row=5, column=0, columnspan=2, sticky="ew", pady=(6, 0))
+        row_icon_bottom.columnconfigure(1, weight=1)
+
         ttk.Button(
-            row_icon,
+            row_icon_bottom,
             text="Chemin icône…",
             command=self.on_choose_icon_path,
-        ).pack(side="right")
+        ).grid(row=0, column=0, sticky="w")
 
-        # Affichage du chemin icône (optionnel mais pratique)
-        ttk.Label(grid, text="Icône :").grid(row=5, column=0, sticky="w", pady=(6, 0), padx=(0, 10))
-
-        ent_icon = ttk.Entry(grid, textvariable=self.var_icon_path, state="readonly")
-        ent_icon.grid(row=5, column=1, sticky="ew", pady=(6, 0))
-
-
+        ent_icon = ttk.Entry(row_icon_bottom, textvariable=self.var_icon_path, state="readonly")
+        ent_icon.grid(row=0, column=1, sticky="ew", padx=(10, 0))
 
         # ---- Actions
         frm_act = ttk.Frame(main)
