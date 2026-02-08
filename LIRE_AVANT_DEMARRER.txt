@@ -5,17 +5,20 @@ de programmes depuis les clés USB.
 
 Aliux doit d’abord être copié sur l’ordinateur pour fonctionner.
 
+Ironie de la chose: le programmequi sert à installer des programmes sans lignes
+de code s'installe...avec des lignes de code...
+
 INSTALLATION (1 minute) :
 
 1) Copiez le fichier :
-   Aliux-0.1.3-linux-x86_64.AppImage
+   Aliux-X.X.X-linux-x86_64.AppImage
    sur votre ordinateur (par exemple sur le Bureau).
 
 2) Autorisez l’exécution du fichier :
-   - clic droit sur le fichier
-   - Propriétés
-   - onglet Permissions
-   - activez : « Exécutable comme programme »
+   - Ouvrez un terminal 
+   - tapez: cd Bureau
+   - donner la permission: : sudo chmod +x Aliux-X.X.X-linux-x86_64.AppImage (mettez la bonne version)
+   - puis lancez le: ./Aliux-X.X.X-linux-x86_64.AppImage
 
 3) Fermez la fenêtre puis double-cliquez sur le fichier.
 
