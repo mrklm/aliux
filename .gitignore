@@ -1,23 +1,38 @@
-### fichiers de venv ###
-
+### Python cache ###
 __pycache__/
-*.pyc
-.venv-build/
+*.py[cod]
+*.pyo
+*.pyd
+
+### Environnements virtuels ###
 .venv/
+.venv-build/
 venv/
 
-### fichiers de build ###
-
-dist/
+### Builds / packaging ###
 build/
+dist/
 releases/
+AppDir/
+squashfs-root/
 *.spec
+*.AppImage
 
-### fichiers notes perso ###
+### Checksums ###
+*.sha256
+*.sha256sum
+SHA256SUMS*.txt
+
+### Archives de release ###
+*.zip
+*.tar.gz
+*.dmg
+*.exe
+
+### Fichiers personnels ###
 *.odt
 *.pdf
 .~lock.*
 
-### fichies macOS ###
-
+### macOS ###
 .DS_Store
