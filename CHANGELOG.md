@@ -8,15 +8,25 @@ and this project follows Semantic Versioning.
 
 
 
-## [0.1.4] - 2026-02-08
+## [0.1.5] - 2026-02-08
 
 ### Modifié
 
- - Modification de l'interface graphique
+ - Modifications de l'interface graphique fenêtre journal non presente au demarrage 
+   mais s'affiche à droite si demandée.
+ - Plus d'aide affichée au demarrage automatiquement   
 
  ---
 
-## [0.1.3] - 2026-02-08
+## [0.1.4] - 2026-02-07
+
+### Modifié
+
+ - Modification de l'interface graphique (reduction de la fenêtre)
+
+ ---
+
+## [0.1.3] - 2026-02-07
 
 ### Modifié
 
@@ -24,7 +34,7 @@ and this project follows Semantic Versioning.
 
  ---
 
-## [0.1.2] - 2026-02-08
+## [0.1.2] - 2026-02-07
 
 ### Modifié
 

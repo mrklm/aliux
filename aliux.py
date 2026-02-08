@@ -21,7 +21,7 @@ except Exception:
 
 
 APP_TITLE = "Aliux"
-APP_VERSION = "0.1.4"
+APP_VERSION = "0.1.5"
 
 
 DEFAULT_INSTALL_DIR = os.path.join(os.path.expanduser("~"), "Applications")
@@ -465,6 +465,9 @@ class AliuxApp(tk.Tk):
         self.title(f"{APP_TITLE} v{APP_VERSION}")
         self.geometry("600x650")   # largeur de départ
         self.minsize(600, 650)     # largeur minimale (hauteur inchangée)
+        # Largeur "normale" (sans journal) / largeur avec journal (panneau droit)
+        self._log_open = False
+        self._geom_normal: str | None = None
 
 
         self.var_file = tk.StringVar()
@@ -481,7 +484,7 @@ class AliuxApp(tk.Tk):
         self.var_dark = tk.BooleanVar(value=True)
 
         # ? Aide (cochée au démarrage)
-        self.var_help = tk.BooleanVar(value=True)
+        self.var_help = tk.BooleanVar(value=False)
 
         # Dossier de départ pour les sélecteurs de fichiers (USB / media)
         self.last_browse_dir = default_browse_dir()
@@ -498,8 +501,6 @@ class AliuxApp(tk.Tk):
         self._apply_window_icon()
 
         # affiche l'aide au démarrage
-        self._show_help(force=True)
-
         # Bootstrap: si Aliux est lancé depuis un support non exécutable (clé FAT/vfat),
         # proposer une installation locale puis relancer automatiquement.
         self.after(350, lambda: bootstrap_offer_install(self))
@@ -558,6 +559,78 @@ class AliuxApp(tk.Tk):
             )
         except Exception:
             pass
+    def _on_help_toggle(self):
+        """Callback de la case '?'.
+
+        - Si l'aide est cochée: ouvre le journal et affiche assets/AIDE.md.
+        - Si décochée: ne ferme pas le journal automatiquement (l'utilisateur garde le contrôle).
+        """
+        if self.var_help.get():
+            self.open_journal(expand=True)
+    def toggle_journal(self):
+        """Ouvre/ferme le panneau de journal (à droite)."""
+        if self._log_open:
+            self.close_journal()
+        else:
+            self.open_journal(expand=True)
+
+    def open_journal(self, expand: bool = True):
+        """Affiche le panneau de journal.
+
+        expand=True: double la largeur (ou utilise une largeur confortable) pour afficher le journal à droite.
+        """
+        if self._log_open:
+            return
+
+        # Mémoriser la géométrie courante pour revenir exactement à l'état précédent.
+        self.update_idletasks()
+        try:
+            self._geom_normal = self.geometry()
+        except Exception:
+            self._geom_normal = None
+
+        # Afficher le panneau à droite
+        self._log_panel.pack(side="right", fill="both", expand=False, padx=(10, 0))
+
+        self._log_open = True
+
+        if expand:
+            self._expand_for_log()
+
+    def close_journal(self):
+        """Masque le panneau de journal et revient à la largeur précédente."""
+        if not self._log_open:
+            return
+
+        try:
+            self._log_panel.pack_forget()
+        except Exception:
+            pass
+
+        self._log_open = False
+
+        # Revenir à la géométrie mémorisée
+        if self._geom_normal:
+            try:
+                self.geometry(self._geom_normal)
+            except Exception:
+                pass
+
+    def _expand_for_log(self):
+        """Agrandit la fenêtre pour faire de la place au journal."""
+        self.update_idletasks()
+
+        # Largeur actuelle
+        try:
+            cur_w = self.winfo_width()
+            cur_h = self.winfo_height()
+        except Exception:
+            return
+
+        # Double la largeur, mais garde une limite minimale raisonnable
+        new_w = max(cur_w * 2, cur_w + 520)
+        self.geometry(f"{new_w}x{cur_h}")
+
 
     def _clear_log(self):
         self.txt_log.configure(state="normal")
@@ -569,6 +642,9 @@ class AliuxApp(tk.Tk):
         Affiche assets/AIDE.md dans le journal si la case ? est cochée.
         - force=True : affiche même si var_help est décochée (utile au démarrage)
         """
+        # S\'assurer que le journal est visible quand on affiche l\'aide
+        if not self._log_open:
+            self.open_journal(expand=True)
         if not force and not self.var_help.get():
             return
 
@@ -614,8 +690,17 @@ class AliuxApp(tk.Tk):
 
     def _build_ui(self):
         pad = 10
-        main = ttk.Frame(self, padding=pad)
-        main.pack(fill="both", expand=True)
+        container = ttk.Frame(self, padding=pad)
+        container.pack(fill="both", expand=True)
+
+        # Colonne gauche: interface principale
+        main = ttk.Frame(container)
+        main.pack(side="left", fill="both", expand=True)
+
+        # Colonne droite: journal (affiché à la demande)
+        self._log_container = container
+        self._log_panel = ttk.Frame(container)
+        # (packé uniquement quand le journal est ouvert)
 
         # ---- Top bar ( ? à gauche / 🌙 à droite )
         topbar = ttk.Frame(main)
@@ -631,7 +716,7 @@ class AliuxApp(tk.Tk):
             left_controls,
             text="?",
             variable=self.var_help,
-            command=lambda: self._show_help(force=False) if self.var_help.get() else None,
+            command=self._on_help_toggle,
         )
         chk_help.pack(side="left", anchor="nw")
 
@@ -739,18 +824,24 @@ class AliuxApp(tk.Tk):
         spacer = ttk.Frame(frm_act)
         spacer.pack(side="left", fill="x", expand=True)
 
+        ttk.Button(frm_act, text="Journal", command=self.toggle_journal).pack(side="right", padx=(10, 0))
+
         ttk.Button(frm_act, text="Installer Aliux dans le menu", command=self.on_install_aliux_desktop).pack(
             side="right"
         )
 
         self.lbl_status = ttk.Label(frm_act, text="")
         self.lbl_status.pack(side="left", padx=(12, 0))
+        # ---- Journal (panneau droit, masqué par défaut)
+        frm_log = ttk.LabelFrame(self._log_panel, text="Journal")
+        frm_log.pack(fill="both", expand=True)
 
-        # ---- Log
-        frm_log = ttk.LabelFrame(main, text="Journal")
-        frm_log.pack(fill="both", expand=True, pady=(pad, 0))
+        bar_log = ttk.Frame(frm_log)
+        bar_log.pack(fill="x", padx=pad, pady=(pad, 0))
+        ttk.Button(bar_log, text="Réduire", command=self.close_journal).pack(side="left")
+        ttk.Button(bar_log, text="Effacer", command=self._clear_log).pack(side="left", padx=(10, 0))
 
-        self.txt_log = tk.Text(frm_log, height=12, wrap="word")
+        self.txt_log = tk.Text(frm_log, height=22, wrap="word")
         self.txt_log.pack(fill="both", expand=True, padx=pad, pady=pad)
         self.txt_log.configure(state="disabled")
         
