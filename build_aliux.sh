@@ -5,10 +5,11 @@ set -euo pipefail
 # Build Linux AppImage pour Aliux
 # Sorties dans ./releases/
 #
-# Pré-requis:
-#   - python3.12 + python3.12-venv
-#   - curl
-#   - (optionnel) fuse2/fuse3 pour exécuter appimagetool.AppImage
+# Nettoyage après succès :
+#   - build/
+#   - dist/
+#   - *.spec
+#   - .venv-build
 # ------------------------------------------------------------
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -16,10 +17,27 @@ cd "$ROOT_DIR"
 
 APP_NAME="Aliux"
 
-# ---- Vérifications dépendances système ----------------------
+# ---- Helpers -------------------------------------------------
 need_cmd() { command -v "$1" >/dev/null 2>&1; }
 die() { echo "ERREUR: $*" >&2; exit 1; }
+log() { echo "▶ $*"; }
 
+cleanup_success() {
+  log "Nettoyage après succès…"
+  # Désactiver venv si actif (ne pas échouer si deactivate absent)
+  if declare -F deactivate >/dev/null 2>&1; then
+    deactivate || true
+  fi
+
+  rm -rf "$ROOT_DIR/build" "$ROOT_DIR/dist" "$ROOT_DIR/.venv-build"
+  rm -f "$ROOT_DIR"/*.spec
+  log "Nettoyage terminé."
+}
+
+SUCCESS=0
+trap 'if [[ "$SUCCESS" -eq 1 ]]; then cleanup_success; fi' EXIT
+
+# ---- Vérifications dépendances système ----------------------
 need_cmd python3.12 || die "python3.12 est requis (ex: sudo apt install -y python3.12 python3.12-venv)"
 need_cmd curl      || die "curl est requis (ex: sudo apt install -y curl)"
 need_cmd objdump   || die "objdump est requis (paquet binutils) (ex: sudo apt install -y binutils)"
@@ -36,8 +54,7 @@ case "$ARCH" in
   amd64) ARCH="x86_64" ;;
   arm64) ARCH="aarch64" ;;
   *)
-    echo "ERREUR: architecture non supportée: $ARCH"
-    exit 1
+    die "architecture non supportée: $ARCH"
     ;;
 esac
 
@@ -63,7 +80,6 @@ mkdir -p "$BUILD_DIR" "$RELEASES_DIR"
 # ---- Venv de build (recréé à chaque build) -------------------
 rm -rf .venv-build
 python3.12 -m venv .venv-build
-
 # shellcheck disable=SC1091
 source .venv-build/bin/activate
 
@@ -74,8 +90,7 @@ PIP_PATH="$(python -c 'import pip, os; print(os.path.abspath(pip.__file__))')"
 case "$PIP_PATH" in
   *"/.venv-build/"*) : ;;
   *)
-    echo "ERREUR: pip ne vient pas du venv (.venv-build). Chemin: $PIP_PATH"
-    exit 1
+    die "pip ne vient pas du venv (.venv-build). Chemin: $PIP_PATH"
     ;;
 esac
 
@@ -87,7 +102,7 @@ if [[ -f "requirements.txt" ]]; then
   python -m pip install -r requirements.txt
 fi
 
-# ---- Nettoyage sorties précédentes --------------------------
+# ---- Nettoyage sorties précédentes ---------------------------
 rm -rf "$DIST_DIR" "$BUILD_DIR/pyinstaller" "$APPDIR"
 mkdir -p "$BUILD_DIR/pyinstaller"
 
@@ -147,15 +162,13 @@ if [[ -f "assets/aliuxico.png" ]]; then
   mkdir -p "$APPDIR/usr/share/icons/hicolor/256x256/apps"
   cp -a "$APPDIR/aliux.png" "$APPDIR/usr/share/icons/hicolor/256x256/apps/aliux.png"
 else
-  echo "ERREUR: assets/aliuxico.png introuvable"
-  exit 1
+  die "assets/aliuxico.png introuvable"
 fi
 
 # ---- Récupération appimagetool -------------------------------
-
 APPIMAGETOOL="$BUILD_DIR/appimagetool-${ARCH}.AppImage"
 if [[ ! -f "$APPIMAGETOOL" ]]; then
-  echo "Téléchargement appimagetool (${ARCH})..."
+  log "Téléchargement appimagetool (${ARCH})…"
   curl -L -o "$APPIMAGETOOL" \
     "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-${ARCH}.AppImage"
   chmod +x "$APPIMAGETOOL"
@@ -170,27 +183,20 @@ rm -f "$OUT"
 if ARCH="$ARCH" "$APPIMAGETOOL" "$APPDIR" "$OUT"; then
   :
 else
-  echo "appimagetool.AppImage a échoué (souvent FUSE manquant). Fallback: extraction..."
+  log "appimagetool.AppImage a échoué (souvent FUSE manquant). Fallback: extraction…"
   EXTRACT_DIR="$BUILD_DIR/appimagetool-extract"
   rm -rf "$EXTRACT_DIR"
   mkdir -p "$EXTRACT_DIR"
 
-  # Extraction de l'AppImage tool
   (cd "$EXTRACT_DIR" && "$APPIMAGETOOL" --appimage-extract >/dev/null)
-
-  # Exécution du tool extrait
   ARCH="$ARCH" "$EXTRACT_DIR/squashfs-root/AppRun" "$APPDIR" "$OUT"
 fi
 
-# ---- SHA256 ---------------------------------------------------
+# ---- SHA256 AppImage -----------------------------------------
 (
   cd "$RELEASES_DIR"
   sha256sum "$(basename "$OUT")" > "$(basename "$OUT").sha256"
 )
-
-echo
-echo "OK -> $OUT"
-echo "OK -> $OUT.sha256"
 
 # ---- Archive tar.gz de l’AppImage + SHA256 -------------------
 TAR="$RELEASES_DIR/${APP_NAME}-${APP_VERSION}-linux-${ARCH}.tar.gz"
@@ -200,5 +206,11 @@ TAR="$RELEASES_DIR/${APP_NAME}-${APP_VERSION}-linux-${ARCH}.tar.gz"
   sha256sum "$(basename "$TAR")" > "$(basename "$TAR").sha256"
 )
 
+echo
+echo "OK -> $OUT"
+echo "OK -> $OUT.sha256"
 echo "OK -> $TAR"
 echo "OK -> $TAR.sha256"
+
+# ---- Marquer succès (déclenche le nettoyage via trap) --------
+SUCCESS=1
