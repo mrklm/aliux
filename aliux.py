@@ -21,7 +21,7 @@ except Exception:
 
 
 APP_TITLE = "Aliux"
-APP_VERSION = "0.1.7"
+APP_VERSION = "0.1.8"
 
 
 DEFAULT_INSTALL_DIR = os.path.join(os.path.expanduser("~"), "Applications")
@@ -69,7 +69,44 @@ def set_executable(path: str) -> None:
     st = os.stat(path)
     # Rendre exécutable pour l'utilisateur, le groupe et les autres (équivalent chmod +x)
     os.chmod(path, st.st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-    
+
+
+def atomic_copy_replace(src: str, dst: str) -> None:
+    """Copie src vers dst en mode atomique.
+
+    Stratégie:
+    - copie vers un fichier temporaire dans le même dossier
+    - chmod +x si possible
+    - os.replace(tmp, dst) (remplacement atomique sur le même FS)
+
+    Avantage:
+    - si une ancienne version est en cours d'exécution, elle conserve son inode;
+      la nouvelle version devient immédiatement le fichier à cet emplacement.
+    """
+    dst_dir = os.path.dirname(dst)
+    ensure_dir(dst_dir)
+
+    fd, tmp_path = tempfile.mkstemp(prefix=".aliux-tmp-", dir=dst_dir)
+    os.close(fd)
+    try:
+        shutil.copy2(src, tmp_path)
+        try:
+            set_executable(tmp_path)
+        except Exception:
+            pass
+        os.replace(tmp_path, dst)
+        try:
+            set_executable(dst)
+        except Exception:
+            pass
+    finally:
+        try:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+        except Exception:
+            pass
+
+
 def default_browse_dir() -> str:
     """Dossier de départ pour les boîtes de dialogue (priorité aux supports amovibles)."""
     user = os.environ.get("USER") or os.environ.get("USERNAME") or ""
@@ -84,7 +121,7 @@ def default_browse_dir() -> str:
         if p and os.path.isdir(p):
             return p
     return os.path.expanduser("~")
-    
+
 
 # ---------------------------------------------------------------------------
 # Bootstrap (auto-install Aliux depuis un support non exécutable)
@@ -147,6 +184,11 @@ def is_non_executable_mount(path: str) -> bool:
 def ensure_self_local_copy() -> str | None:
     """Copie l'AppImage d'Aliux dans ~/Applications/Aliux/ et la rend exécutable.
 
+    Important:
+    - la copie est réalisée en remplacement atomique (safe si une ancienne version est ouverte).
+    - la destination est toujours:
+        ~/Applications/Aliux/Aliux.AppImage
+
     Retourne le chemin de l'AppImage locale, ou None si non applicable.
     """
     src = os.environ.get("APPIMAGE")
@@ -158,10 +200,19 @@ def ensure_self_local_copy() -> str | None:
 
     try:
         ensure_dir(dest_dir)
-        # Si déjà au bon endroit, ne rien faire
-        if os.path.realpath(src) != os.path.realpath(dest):
-            shutil.copy2(src, dest)
-        set_executable(dest)
+
+        # Si déjà au bon endroit, ne rien faire (mais garantir +x)
+        try:
+            if os.path.realpath(src) == os.path.realpath(dest):
+                try:
+                    set_executable(dest)
+                except Exception:
+                    pass
+                return dest
+        except Exception:
+            pass
+
+        atomic_copy_replace(src, dest)
         return dest
     except Exception:
         return None
@@ -188,7 +239,6 @@ def bootstrap_offer_install(parent: tk.Misc | None = None) -> None:
         # Support exécutable: rien à faire
         return
 
-    user = os.environ.get("USER") or os.environ.get("USERNAME") or ""
     mount_hint = ""
     mi = find_mount_for_path(src)
     if mi:
@@ -469,7 +519,6 @@ class AliuxApp(tk.Tk):
         self._log_open = False
         self._geom_normal: str | None = None
 
-
         self.var_file = tk.StringVar()
         self.var_name = tk.StringVar()
         self.var_desc = tk.StringVar()
@@ -500,7 +549,6 @@ class AliuxApp(tk.Tk):
         # tente icône de fenêtre
         self._apply_window_icon()
 
-        # affiche l'aide au démarrage
         # Bootstrap: si Aliux est lancé depuis un support non exécutable (clé FAT/vfat),
         # proposer une installation locale puis relancer automatiquement.
         self.after(350, lambda: bootstrap_offer_install(self))
@@ -559,6 +607,7 @@ class AliuxApp(tk.Tk):
             )
         except Exception:
             pass
+
     def _on_help_toggle(self):
         """Callback de la case '?'.
 
@@ -568,6 +617,7 @@ class AliuxApp(tk.Tk):
         if self.var_help.get():
             self.open_journal(expand=True)
             self._show_help(force=True)
+
     def toggle_journal(self):
         """Ouvre/ferme le panneau de journal (à droite)."""
         if self._log_open:
@@ -632,7 +682,6 @@ class AliuxApp(tk.Tk):
         new_w = max(cur_w * 2, cur_w + 520)
         self.geometry(f"{new_w}x{cur_h}")
 
-
     def _clear_log(self):
         self.txt_log.configure(state="normal")
         self.txt_log.delete("1.0", "end")
@@ -643,7 +692,7 @@ class AliuxApp(tk.Tk):
         Affiche assets/AIDE.md dans le journal si la case ? est cochée.
         - force=True : affiche même si var_help est décochée (utile au démarrage)
         """
-        # S\'assurer que le journal est visible quand on affiche l\'aide
+        # S'assurer que le journal est visible quand on affiche l'aide
         if not self._log_open:
             self.open_journal(expand=True)
         if not force and not self.var_help.get():
@@ -667,7 +716,6 @@ class AliuxApp(tk.Tk):
         self.txt_log.yview_moveto(0.0)
 
         self.txt_log.configure(state="disabled")
-
 
         # s'assurer qu'elle est cochée
         self.var_help.set(True)
@@ -754,7 +802,6 @@ class AliuxApp(tk.Tk):
         ttk.Button(row, text="🔄", width=3, command=self.on_refresh_mounts).pack(side="left", padx=(6, 0))
         ttk.Entry(row, textvariable=self.var_file).pack(side="left", fill="x", expand=True, padx=(10, 0))
 
-
         hint = ttk.Label(frm_file, text="Veuillez sélectionner un fichier .AppImage.")
         hint.pack(anchor="w", padx=pad, pady=(6, pad))
 
@@ -765,18 +812,15 @@ class AliuxApp(tk.Tk):
         grid = ttk.Frame(frm_set)
         grid.pack(fill="x", expand=True, anchor="w", padx=pad, pady=pad)
 
-        
         grid.grid_anchor("w")
         grid.columnconfigure(0, weight=0)
         grid.columnconfigure(1, weight=1)
-
 
         ttk.Label(grid, text="Nom :").grid(row=0, column=0, sticky="w", pady=4, padx=(0, 10))
         ttk.Entry(grid, textvariable=self.var_name).grid(row=0, column=1, sticky="ew", pady=4)
 
         ttk.Label(grid, text="Description :").grid(row=1, column=0, sticky="w", pady=4, padx=(0, 10))
         ttk.Entry(grid, textvariable=self.var_desc).grid(row=1, column=1, sticky="ew", pady=4)
-
 
         ttk.Label(grid, text="Catégorie :").grid(row=2, column=0, sticky="w", pady=4, padx=(0, 10))
         ttk.Combobox(
@@ -786,7 +830,6 @@ class AliuxApp(tk.Tk):
             state="readonly",
             width=25,
         ).grid(row=2, column=1, sticky="ew", pady=4)
-
 
         # Icône : répartition sur 2 lignes
         # Ligne 1 : "Icône :" + (checkbox extraction)
@@ -836,6 +879,7 @@ class AliuxApp(tk.Tk):
 
         self.lbl_status = ttk.Label(frm_act, text="")
         self.lbl_status.pack(side="left", padx=(12, 0))
+
         # ---- Journal (panneau droit, masqué par défaut)
         frm_log = ttk.LabelFrame(self._log_panel, text="Journal")
         frm_log.pack(fill="both", expand=True)
@@ -847,11 +891,10 @@ class AliuxApp(tk.Tk):
         self.txt_log = tk.Text(frm_log, height=22, wrap="word")
         self.txt_log.pack(fill="both", expand=True, padx=pad, pady=pad)
         self.txt_log.configure(state="disabled")
-        
+
     def on_refresh_mounts(self):
         self.last_browse_dir = default_browse_dir()
         self.log(f"🔄 Dossier de navigation mis à jour : {self.last_browse_dir}")
-
 
     def on_choose_file(self):
         path = filedialog.askopenfilename(
@@ -904,7 +947,7 @@ class AliuxApp(tk.Tk):
 
         if not path:
             return
-        
+
         self.last_browse_dir = os.path.dirname(path)
         self.var_icon_path.set(path)
         self.log(f"Icône sélectionnée : {path}")
@@ -975,8 +1018,8 @@ class AliuxApp(tk.Tk):
                     return
 
             self.log(f"Copie vers : {dst_appimage}")
-            shutil.copy2(src, dst_appimage)
-            set_executable(dst_appimage)
+            # Copie atomique = update sûr (même si un autre processus exécute l'ancien fichier)
+            atomic_copy_replace(src, dst_appimage)
             self.log("Permissions : exécutable (chmod +x)")
 
             # Icône : priorité à l'icône manuelle
@@ -1130,6 +1173,7 @@ class AliuxApp(tk.Tk):
                     removed.append(ap)
                 except Exception as e:
                     errors.append(f"{ap} : {e}")
+
             # Supprimer le dossier de l'app si vide
             try:
                 d = os.path.dirname(ap)
@@ -1138,7 +1182,6 @@ class AliuxApp(tk.Tk):
                     removed.append(d)
             except Exception as e:
                 errors.append(f"{os.path.dirname(ap)} : {e}")
-
 
             ic = item.get("icon_path")
             if ic and os.path.exists(ic):
@@ -1177,11 +1220,14 @@ class AliuxApp(tk.Tk):
     # ---------------------------
 
     def on_install_aliux_desktop(self):
-        """Ajoute Aliux au menu des applications.
+        """Ajoute Aliux au menu des applications (et met à jour l'installation si déjà présente).
 
-        - Si Aliux tourne en AppImage, copie d'abord l'AppImage en local (~/Applications/Aliux/)
-          et crée un lanceur qui pointe vers cette AppImage (exécutable garanti).
-        - Sinon, fallback: lance python3 + aliux.py (utile en dev).
+        Comportement voulu:
+        - L'AppImage en cours d'exécution est copiée vers:
+            ~/Applications/Aliux/Aliux.AppImage
+          en remplacement atomique (safe si une ancienne version tourne).
+        - Le lanceur ~/.local/share/applications/aliux.desktop pointe vers cette copie locale.
+        - En mode dev (sans APPIMAGE), création d'un lanceur qui exécute aliux.py via python3.
         """
         try:
             ensure_dir(DESKTOP_DIR)
@@ -1200,14 +1246,18 @@ class AliuxApp(tk.Tk):
 
             appimage_src = os.environ.get("APPIMAGE")
             if appimage_src and os.path.isfile(appimage_src):
-                # Copier l'AppImage en local et garantir +x
+                # Copie en local (mise à jour incluse) +x garanti + remplacement atomique
                 local_appimage = ensure_self_local_copy()
-                target = local_appimage if (local_appimage and os.path.isfile(local_appimage)) else appimage_src
-                exec_value = f'"{target}" %U'
+                if not local_appimage or not os.path.isfile(local_appimage):
+                    raise RuntimeError("Impossible de copier Aliux dans ~/Applications/Aliux/.")
+
+                exec_value = f'"{local_appimage}" %U'
+                self.log(f"✅ Aliux installé / mis à jour : {local_appimage}")
             else:
                 # Mode script (dev)
                 script_path = os.path.abspath(__file__)
                 exec_value = f'python3 "{script_path}"'
+                self.log("ℹ️ Mode script détecté (APPIMAGE absent). Lanceur en mode dev.")
 
             desktop_content = (
                 "[Desktop Entry]\n"
@@ -1240,12 +1290,13 @@ class AliuxApp(tk.Tk):
             messagebox.showinfo(
                 "Aliux",
                 "Aliux a été ajouté au menu des applications.\n\n"
-                "Si Aliux a été copié dans ~/Applications/Aliux/, le lanceur pointe vers cette copie locale.",
+                "Le lanceur pointe vers la copie locale (~/Applications/Aliux/Aliux.AppImage) lorsqu'Aliux est lancé en AppImage.",
             )
 
         except Exception as e:
             self.log(f"❌ Erreur installation lanceur Aliux : {e}")
             messagebox.showerror("Aliux", f"Impossible de créer le lanceur Aliux.\n\n{e}")
+
 
 if __name__ == "__main__":
     if os.name != "posix":

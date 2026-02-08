@@ -8,6 +8,14 @@ and this project follows Semantic Versioning.
 
 
 
+## [0.1.8] - 2026-02-08
+
+### Modifié
+
+ - Si auto re installation: suppression de l'ancien fichier, et installation à la place
+
+---
+
 ## [0.1.7] - 2026-02-08
 
 ### Modifié
