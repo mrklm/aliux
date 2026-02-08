@@ -18,6 +18,7 @@ INSTALLATION (1 minute) :
    - Ouvrez un terminal 
    - tapez: cd Bureau
    - donner la permission: : sudo chmod +x Aliux-X.X.X-linux-x86_64.AppImage (mettez la bonne version)
+   - Renseignez votre mot de passe
    - puis lancez le: ./Aliux-X.X.X-linux-x86_64.AppImage
 
 3) Fermez la fenêtre puis double-cliquez sur le fichier.
