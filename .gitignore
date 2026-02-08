@@ -1,11 +1,23 @@
+### fichiers de venv ###
+
 __pycache__/
 *.pyc
 .venv-build/
 .venv/
 venv/
+
+### fichiers de build ###
+
 dist/
 build/
 releases/
 *.spec
+
+### fichiers notes perso ###
 *.odt
+*.pdf
+.~lock.*
+
+### fichies macOS ###
+
 .DS_Store
