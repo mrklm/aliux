@@ -8,6 +8,22 @@ and this project follows Semantic Versioning.
 
 
 
+## [0.1.7] - 2026-02-08
+
+### Modifié
+
+
+
+ ---
+
+## [0.1.6] - 2026-02-08
+
+### Modifié
+
+ - Un répertoire est bien créé pour chaque programme installé dans Applications
+
+ ---
+
 ## [0.1.5] - 2026-02-08
 
 ### Modifié

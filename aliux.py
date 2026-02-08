@@ -21,7 +21,7 @@ except Exception:
 
 
 APP_TITLE = "Aliux"
-APP_VERSION = "0.1.5"
+APP_VERSION = "0.1.6"
 
 
 DEFAULT_INSTALL_DIR = os.path.join(os.path.expanduser("~"), "Applications")
@@ -947,7 +947,11 @@ class AliuxApp(tk.Tk):
 
             slug = slugify(name)
 
-            dst_appimage = os.path.join(install_dir, f"{slug}.AppImage")
+            # 1 dossier par application (évite de tout mélanger dans ~/Applications)
+            app_dir = os.path.join(install_dir, slug)
+            ensure_dir(app_dir)
+
+            dst_appimage = os.path.join(app_dir, f"{slug}.AppImage")
 
             if os.path.exists(dst_appimage):
                 choice = {"val": None}
@@ -1123,6 +1127,15 @@ class AliuxApp(tk.Tk):
                     removed.append(ap)
                 except Exception as e:
                     errors.append(f"{ap} : {e}")
+            # Supprimer le dossier de l'app si vide
+            try:
+                d = os.path.dirname(ap)
+                if d and os.path.isdir(d) and not os.listdir(d):
+                    os.rmdir(d)
+                    removed.append(d)
+            except Exception as e:
+                errors.append(f"{os.path.dirname(ap)} : {e}")
+
 
             ic = item.get("icon_path")
             if ic and os.path.exists(ic):
