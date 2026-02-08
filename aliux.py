@@ -34,8 +34,8 @@ HEADER_IMAGE_PATH = os.path.join(ASSETS_DIR, "aliux.png")
 HELP_MD_PATH = os.path.join(ASSETS_DIR, "AIDE.md")
 
 # Taille max bannière (réglage simple)
-HEADER_MAX_W = 340
-HEADER_MAX_H = 110
+HEADER_MAX_W = 510
+HEADER_MAX_H = 165
 
 ALIUX_DESKTOP_TAG = "X-Aliux-Installer"
 ALIUX_DESKTOP_TAG_VALUE = "true"
