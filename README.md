@@ -14,7 +14,7 @@ Il permet de centraliser vos AppImages dans un emplacement propre, de créer aut
 
 ## Fonctionnalités
 
-- Installation locale d’AppImages (sans `sudo`)
+- Installation locale d’AppImages (sans `sudo`)(à part pour lui même)
 - Organisation des applications dans un répertoire dédié
 - Création automatique des fichiers `.desktop`
 - Icônes gérées proprement
@@ -32,10 +32,13 @@ https://github.com/mrklm/aliux/releases/latest
 
 Fichier attendu :
 ```text
+
+LIRE_AVANT_DEMARRAGE.txt
+
 Aliux-x.y.z-linux-x86_64.AppImage
 Aliux-x.y.z-linux-x86_64.AppImage.SHA256
-Aliux-0.1.8-linux-x86_64.tar.gz
-Aliux-0.1.8-linux-x86_64.tar.gz.SHA256
+Aliux-x.y.z-linux-x86_64.tar.gz
+Aliux-x.y.z-linux-x86_64.tar.gz.SHA256
 
 📜 Licence
 
