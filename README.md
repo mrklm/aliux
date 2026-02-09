@@ -35,3 +35,6 @@ https://github.com/mrklm/aliux/releases/latest
 Fichier attendu :
 ```text
 Aliux-x.y.z-linux-x86_64.AppImage
+Aliux-x.y.z-linux-x86_64.AppImage.SHA256
+Aliux-0.1.8-linux-x86_64.tar.gz
+Aliux-0.1.8-linux-x86_64.tar.gz.SHA256
