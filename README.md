@@ -2,7 +2,7 @@
 
 **Aliux** est un outil graphique léger pour **installer, organiser et lancer des AppImages** sous Linux, sans dépendre d’un gestionnaire de paquets système.
 
-Il permet de centraliser vos AppImages dans un emplacement propre,de créer automatiquement les entrées de menu, et de garder un environnement utilisateur cohérent.
+Il permet de centraliser vos AppImages dans un emplacement propre (repértoire Applications) et de créer automatiquement les entrées de menu afin de garder un environnement utilisateur cohérent.
 
 ---
 
