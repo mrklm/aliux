@@ -1,6 +1,6 @@
 # Aliux
 
-**Aliux** est un outil graphique léger pour **installer et organiser des AppImages sous Linux, sans dépendre d’un gestionnaire de paquets système.
+Aliux est un outil graphique léger pour installer et organiser des AppImages sous Linux, sans dépendre d’un gestionnaire de paquets système.
 
 Il permet de centraliser vos AppImages dans un emplacement propre (repértoire Applications) et de créer automatiquement les entrées de menu afin de garder un environnement utilisateur cohérent.
 
@@ -25,9 +25,9 @@ Il permet de centraliser vos AppImages dans un emplacement propre (repértoire A
 
 ## Téléchargement (Linux)
 
-Les binaires sont fournis sous forme **AppImage**.
+Les binaires sont fournis sous forme AppImage
 
-👉 **Télécharger la dernière version :**  
+👉 **Télécharger la dernière version : 
 https://github.com/mrklm/aliux/releases/latest
 
 Fichier attendu :
@@ -45,19 +45,23 @@ Aliux-x.y.z-linux-x86_64.tar.gz.SHA256
 
 Ce logiciel est distribué sous la GNU General Public License v3.0.
 
+
 🛠️ Contribuer
 
 Les contributions sont les bienvenues via Pull Requests.
+
 
 ⚠️ Avertissement
 
 Ce logiciel est fourni sans garantie. L'auteur décline toute responsabilité en cas de dommage ou de dysfonctionnement.
 
+
 💡 Pourquoi ce projet est-il sous licence libre ?
+
 
 Ce projet s'inscrit dans la philosophie du logiciel libre, promue par des associations comme April.
 
-Nous croyons que le partage des connaissances et des outils est essentiel pour une société numérique plus juste et transparente.
+le partage des connaissances et des outils est essentiel pour une société numérique plus juste et transparente.
 
 📬 Contact:
 
