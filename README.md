@@ -8,7 +8,7 @@ Il permet de centraliser vos AppImages dans un emplacement propre, de créer aut
 
 ## Capture d’écran
 
-![Aliux – interface principale](aliux/screenshots/main.png)
+![Aliux – interface principale](aliux/screenshots/aliux.png)
 
 > *(La capture doit être placée dans `aliux/screenshots/` et versionnée.)*
 
